@@ -1,11 +1,28 @@
 from __future__ import annotations
 
-from daily_brief.workflows.daily_brief import run_daily_brief_workflow
+import argparse
+
+from daily_brief.workflows.daily_brief import run_daily_brief_workflow, run_rss_brief_workflow
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(description="Run daily brief workflow")
+    parser.add_argument("--source", choices=["mock", "rss"], default="mock")
+    parser.add_argument(
+        "--feed-url",
+        action="append",
+        default=[],
+        help="RSS/Atom feed URL. Can be used multiple times.",
+    )
+    parser.add_argument("--limit", type=int, default=20, help="Max items to fetch")
+    args = parser.parse_args()
+
     try:
-        output = run_daily_brief_workflow()
+        if args.source == "rss":
+            feed_urls = args.feed_url or ["https://hnrss.org/frontpage"]
+            output = run_rss_brief_workflow(feed_urls=feed_urls, limit=args.limit)
+        else:
+            output = run_daily_brief_workflow()
         print(output)
     except RuntimeError as exc:
         print("Failed to run workflow.")

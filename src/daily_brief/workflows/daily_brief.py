@@ -9,6 +9,8 @@ from daily_brief.domain.models import AgentContext, Task
 from daily_brief.ingestion.dedupe import dedupe_artifacts
 from daily_brief.ingestion.normalize import normalize_records
 from daily_brief.renderers.markdown import render_markdown
+from daily_brief.sources.base import FetchContext
+from daily_brief.sources.rss import RSSSource
 
 
 def run_daily_brief_workflow() -> str:
@@ -17,6 +19,17 @@ def run_daily_brief_workflow() -> str:
         source_name="mock_rss",
         source_type=SourceType.RSS,
         goal="Summarize important AI and engineering updates",
+        raw_records=raw_records,
+    )
+
+
+def run_rss_brief_workflow(feed_urls: list[str], limit: int = 20) -> str:
+    source = RSSSource(feed_urls=feed_urls)
+    raw_records = source.fetch(FetchContext(limit=limit))
+    return _run_pipeline(
+        source_name=source.name,
+        source_type=source.source_type,
+        goal="Summarize important updates from RSS feeds",
         raw_records=raw_records,
     )
 
@@ -43,7 +56,7 @@ def _run_pipeline(
     artifacts = normalize_records(source_name=source_name, source_type=source_type, records=raw_records)
     artifacts = dedupe_artifacts(artifacts)
 
-    agent = BriefingAgent(max_items=5)
+    agent = BriefingAgent(max_items=10)
     result = agent.run(task=task, artifacts=artifacts, context=context)
 
     return render_markdown(result)
