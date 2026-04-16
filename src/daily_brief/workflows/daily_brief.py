@@ -8,22 +8,35 @@ from daily_brief.domain.enums import OutputFormat, SourceType, TaskType
 from daily_brief.domain.models import AgentContext, Task
 from daily_brief.ingestion.dedupe import dedupe_artifacts
 from daily_brief.ingestion.normalize import normalize_records
+from daily_brief.llm.gemini import GeminiLLM
+from daily_brief.llm.mock import MockLLM
 from daily_brief.renderers.markdown import render_markdown
+from daily_brief.skills.prioritize_skill import PrioritizeSkill
+from daily_brief.skills.registry import SkillRegistry
 from daily_brief.sources.base import FetchContext
 from daily_brief.sources.rss import RSSSource
+from daily_brief.tools.rank_items import RankItemsTool
+from daily_brief.tools.registry import ToolRegistry
 
 
-def run_daily_brief_workflow() -> str:
+def run_daily_brief_workflow(llm_backend: str = "mock", gemini_model: str = "gemini-2.5-flash") -> str:
     raw_records = _mock_records()
     return _run_pipeline(
         source_name="mock_rss",
         source_type=SourceType.RSS,
         goal="Summarize important AI and engineering updates",
         raw_records=raw_records,
+        llm_backend=llm_backend,
+        gemini_model=gemini_model,
     )
 
 
-def run_rss_brief_workflow(feed_urls: list[str], limit: int = 20) -> str:
+def run_rss_brief_workflow(
+    feed_urls: list[str],
+    limit: int = 20,
+    llm_backend: str = "mock",
+    gemini_model: str = "gemini-2.5-flash",
+) -> str:
     source = RSSSource(feed_urls=feed_urls)
     raw_records = source.fetch(FetchContext(limit=limit))
     return _run_pipeline(
@@ -31,6 +44,8 @@ def run_rss_brief_workflow(feed_urls: list[str], limit: int = 20) -> str:
         source_type=source.source_type,
         goal="Summarize important updates from RSS feeds",
         raw_records=raw_records,
+        llm_backend=llm_backend,
+        gemini_model=gemini_model,
     )
 
 
@@ -39,6 +54,8 @@ def _run_pipeline(
     source_type: SourceType,
     goal: str,
     raw_records: list[dict[str, Any]],
+    llm_backend: str,
+    gemini_model: str,
 ) -> str:
     task = Task(
         type=TaskType.DAILY_BRIEF,
@@ -48,7 +65,23 @@ def _run_pipeline(
         date=datetime.utcnow(),
     )
 
+    tool_registry = ToolRegistry()
+    tool_registry.register(RankItemsTool())
+
+    skill_registry = SkillRegistry()
+    skill_registry.register(PrioritizeSkill())
+
+    if llm_backend == "mock":
+        llm = MockLLM(max_items=10)
+    elif llm_backend == "gemini":
+        llm = GeminiLLM(model=gemini_model, max_items=10)
+    else:
+        llm = None
+
     context = AgentContext(
+        llm=llm,
+        tool_registry=tool_registry,
+        skill_registry=skill_registry,
         run_id=f"run-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}",
         current_time=datetime.utcnow(),
     )

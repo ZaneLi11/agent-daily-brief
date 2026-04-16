@@ -15,7 +15,19 @@ class BriefingAgent:
         artifacts: list[Artifact],
         context: AgentContext,
     ) -> AgentResult:
-        selected = artifacts[: self.max_items]
+        prepared = self._apply_skills(task=task, artifacts=artifacts, context=context)
+
+        if context.llm is not None and hasattr(context.llm, "generate"):
+            try:
+                return context.llm.generate(
+                    task=task,
+                    artifacts=prepared[: self.max_items],
+                    context=context,
+                )
+            except Exception as exc:
+                raise RuntimeError(f"LLM generation failed: {exc}") from exc
+
+        selected = prepared[: self.max_items]
 
         headline = f"Daily Brief: {len(selected)} highlights"
         summary = self._build_summary(task=task, selected=selected, total=len(artifacts))
@@ -60,6 +72,21 @@ class BriefingAgent:
                 "run_id": context.run_id,
             },
         )
+
+    def _apply_skills(
+        self,
+        task: Task,
+        artifacts: list[Artifact],
+        context: AgentContext,
+    ) -> list[Artifact]:
+        registry = context.skill_registry
+        if registry is None or not hasattr(registry, "apply_all"):
+            return artifacts
+
+        try:
+            return registry.apply_all(task=task, artifacts=artifacts, context=context)
+        except Exception:
+            return artifacts
 
     def _build_summary(self, task: Task, selected: list[Artifact], total: int) -> str:
         if not selected:
